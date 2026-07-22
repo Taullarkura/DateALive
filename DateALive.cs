@@ -3,8 +3,6 @@ using Battle.DiceAttackEffect;
 using DateALive.Utils;
 using HarmonyLib;
 using Spine;
-using Spine;
-using Spine.Unity;
 using Spine.Unity;
 using System;
 using System.Collections.Generic;

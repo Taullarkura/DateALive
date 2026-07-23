@@ -26,7 +26,7 @@ namespace DateALive.Utils
         public string Log_Path = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) + "\\log.txt";
         private void Base_Log(string con,string level)
         {
-            File.AppendAllText(Log_Path, $"[{level}]{con}\r\n");
+            File.AppendAllText(Log_Path, $"[{DateTime.Now.ToString("HH:mm:ss.fff")}][{prefix}][{level}]{con}\r\n");
         }
         public void Info(string con)
         {
@@ -48,15 +48,27 @@ namespace DateALive.Utils
 }
 namespace DateALive
 {
-
     /// <summary>
-    /// HP初始化类，后面换成Initializer
+    /// HP初始化类
     /// </summary>
     public class DateALiveInitializer:ModInitializer
     {
+        private class DebugMono:MonoBehaviour
+        {
+            public void OnDestroy()
+            {
+                Logger.Instance.Info($"go {gameObject.name} destroy!");
+                
+            }
+
+        }
         public static string path = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        public static Shader MatShader { get; private set; }
         public override void OnInitializeMod()
         {
+            File.Delete(Logger.Instance.Log_Path);
+            MatShader = Shader.Find("UI/Default");
+            Logger.Instance.Info($"MatShader 名称: {MatShader?.name ?? "NULL"}");
             //加载特效
             Logger.Instance.Info("Start to load Spine Effect...");
             foreach (var item in Effects)
@@ -69,19 +81,43 @@ namespace DateALive
                 List<Material> mats = new List<Material>();
                 foreach (var png_path in pngs)
                 {
-                    mats.Add(CreateMaterialForSkel(png_path, Path.GetFileName(png_path)));
+                    var mat = CreateMaterialForSkel(png_path, Path.GetFileNameWithoutExtension(png_path));
+                    if (mat != null)
+                        mats.Add(mat);
+                    else
+                        Logger.Instance.Error("Mat is null!");
+                    Logger.Instance.Info("Load png:" + png_path);
                 }
                 var atlasBase = SpineAtlasAsset.CreateRuntimeInstance(new TextAsset(File.ReadAllText(atlas)), mats.ToArray(), true);
+                Logger.Instance.Info($"AtlasAsset.materials 长度: {atlasBase.materials.Length}");
                 var go = SkeletonRenderer.NewSpineGameObject<SkeletonAnimation>(SkeletonDataAsset.CreateRuntimeInstance(
                         json_content,
                         atlasBase,
                         true,
                         0.01f
                     ));
+                
+                
                 if (!SkeletonAnimationMap.ContainsKey(item))
                 {
-                    SkeletonAnimationMap.Add(item, go);
-                    Logger.Instance.Info("Add Spine Effect:" + item);
+                    if (go != null)
+                    {
+                        go.gameObject.AddComponent<DebugMono>();
+                        var renderer = go.gameObject.GetComponent<MeshRenderer>();
+                        if (renderer != null)
+                        {
+                            renderer.materials = atlasBase.materials;
+                        }
+                        else
+                        {
+                            Logger.Instance.Error("renderer is null");
+                        }
+                        GameObject.DontDestroyOnLoad(go.gameObject);
+                        GameObject.DontDestroyOnLoad(go);
+                        SkeletonAnimationMap.Add(item, go);
+
+
+                    }
                 }
             }
             Logger.Instance.Info("End Load Spine Effects");
@@ -100,7 +136,7 @@ namespace DateALive
         {
             try
             {
-                Shader shader = Shader.Find("UI/Default");
+                Shader shader = MatShader;
                 Texture2D texture2D = new Texture2D(2, 2);
                 byte[] data = File.ReadAllBytes(imagepath);
                 texture2D.LoadImage(data);
@@ -109,20 +145,6 @@ namespace DateALive
                 {
                     mainTexture = texture2D
                 };
-                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
-                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-
-                // 3. 关闭深度写入（透明物体通常需要）
-                mat.SetInt("_ZWrite", 0);
-
-                // 4. 强制启用 Alpha 测试（以防被裁剪）
-                mat.SetFloat("_Cutoff", 0f);
-
-                // 5. 设置渲染队列为 Transparent（确保渲染顺序正确）
-                mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
-
-                // 6. 标记材质已修改（强制更新）
-                mat.EnableKeyword("_ALPHABLEND_ON");
                 return mat;
             }
             catch (Exception e)
@@ -132,56 +154,7 @@ namespace DateALive
             return null;
         }
     }
-    /// <summary>
-    /// 测试用特效
-    /// </summary>
-    public class DiceAttackEffect_TestEffect:DiceAttackEffect
-    {
-        public override void Initialize(BattleUnitView self, BattleUnitView target, float destroyTime)
-        {
-            try
-            {
-                this._self = self.model;
-                this._selfTransform = self.atkEffectRoot;
-                this._targetTransform = target.atkEffectRoot;
-                if (animation == null)
-                {
-                    TextAsset skeletonDataFile = new TextAsset(File.ReadAllText(Path.Combine(DateALiveInitializer.path, SpineFileName + ".json")));
-                    AtlasAssetBase atlasAsset = SpineAtlasAsset.CreateRuntimeInstance(new TextAsset(File.ReadAllText(Path.Combine(DateALiveInitializer.path, SpineFileName + ".atlas"))), new Material[]
-                    {
-                          DateALiveInitializer.CreateMaterialForSkel(Path.Combine(DateALiveInitializer.path ,"effects_10101_skillA.png"), "effects_10101_skillA"),
-                          DateALiveInitializer.CreateMaterialForSkel(Path.Combine(DateALiveInitializer.path ,"effects_10101_skillA2.png"), "effects_10101_skillA2"),
-                          DateALiveInitializer.CreateMaterialForSkel(Path.Combine(DateALiveInitializer.path ,"effects_10101_skillA3.png"), "effects_10101_skillA3"),
-                          DateALiveInitializer.CreateMaterialForSkel(Path.Combine(DateALiveInitializer.path ,"effects_10101_skillA4.png"), "effects_10101_skillA4")
-                    }, false);
-                    animation = SkeletonRenderer.NewSpineGameObject<SkeletonAnimation>(SkeletonDataAsset.CreateRuntimeInstance(skeletonDataFile, atlasAsset, false, 0.01f));
-                
-                }
-                animation.gameObject.transform.SetParent(this._targetTransform);
-                animation.gameObject.transform.position = this._targetTransform.position;
-                if (self.model.direction == Direction.LEFT)
-                {
-                    animation.gameObject.transform.localScale = this._targetTransform.localScale;
-                }
-                else
-                {
-                    animation.gameObject.transform.localScale = new Vector3(-(this._targetTransform.localScale.x + 1f), this._targetTransform.localScale.y + 1f, this._targetTransform.localScale.z + 1f);
-                }
-                animation.gameObject.layer = LayerMask.NameToLayer("Effect");
-                this.AniStart();
-            }catch(Exception ex)
-            {
-                Logger.Instance.Error(ex);
-            }
-        }
-        public void AniStart()
-        {
-            animation.gameObject.SetActive(true);
-            TrackEntry trackEntry = animation.state.SetAnimation(0, "hit", false);
-        }
-        public static SkeletonAnimation animation;
-        public static string SpineFileName => "effects_10101_skillA";
-    }
+
     /// <summary>
     /// Spine特效基类
     /// </summary>
@@ -189,8 +162,53 @@ namespace DateALive
     {
         public void InitAnim()
         {
-            if(DateALiveInitializer.SkeletonAnimationMap.ContainsKey(SpineFileName))
-            animation = DateALiveInitializer.SkeletonAnimationMap[SpineFileName];
+            if (DateALiveInitializer.SkeletonAnimationMap.ContainsKey(SpineFileName))
+            {
+                var prototype = DateALiveInitializer.SkeletonAnimationMap[SpineFileName];
+                if (prototype == null)
+                {
+                    Logger.Instance.Warning($"Spine prototype is null for:{SpineFileName}");
+                    return;
+                }
+                try
+                {
+                    // 实例化一个新的 GameObject，避免复用同一个组件导致空引用或状态冲突
+                    var go = UnityEngine.Object.Instantiate(prototype.gameObject);
+                    go.name = prototype.gameObject.name + "_inst";
+                    animation = go.GetComponent<SkeletonAnimation>();
+                    if (animation == null)
+                    {
+                        Logger.Instance.Warning($"实例化后未找到 SkeletonAnimation 组件: {SpineFileName}");
+                        UnityEngine.Object.Destroy(go);
+                    }
+                    MeshRenderer renderer = go.GetComponent<MeshRenderer>();
+                    if (renderer != null && renderer.materials.Length > 0)
+                    {
+                        // 检查我们的材质是否真的没问题
+                        foreach (var item in renderer.materials)
+                        {
+                            if (item == null)
+                            {
+                                Logger.Instance.Error("materials[0] 是 null！");
+                            }
+                            else
+                            {
+                                Logger.Instance.Info($"我们的材质 Shader: {item.shader?.name ?? "NULL"}");
+                                
+                            }
+                        }
+
+                    }
+                    else
+                    {
+                        Logger.Instance.Error($"Renderer 为空或 materials 为空！materials.Count={renderer.materials.Length}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Instance.Error(ex);
+                }
+            }
             else
             {
                 Logger.Instance.Warning($"Not Found Spine Effect:{SpineFileName},检查是否存在对应文件!");
@@ -198,31 +216,44 @@ namespace DateALive
         }
         public override sealed void Initialize(BattleUnitView self, BattleUnitView target, float destroyTime)
         {
-            this._self = self.model;
-            this._selfTransform = self.atkEffectRoot;
-            this._targetTransform = target.atkEffectRoot;
-            if(AnimName==""||SpineFileName=="")
+            try
             {
-                Logger.Instance.Warning("未配置动画名/特效名，特效无法加载！");
-            }
-            if(animation==null)
+                this._self = self.model;
+                this._selfTransform = self.atkEffectRoot;
+                this._targetTransform = target.atkEffectRoot;
+                if (AnimName == "" || SpineFileName == "")
+                {
+                    Logger.Instance.Warning("未配置动画名/特效名，特效无法加载！");
+                }
+                if (animation == null)
+                {
+                    InitAnim();
+                    Logger.Instance.Info("已加载动画" + SpineFileName);
+                }
+                if(animation.gameObject==null)
+                {
+                    Logger.Instance.Info("go is null???");
+                }
+                animation.gameObject.transform.SetParent(this._targetTransform);
+                Logger.Instance.Info("Set Parent");
+                animation.gameObject.transform.position = this._targetTransform.position;
+                Logger.Instance.Info("Set position");
+                if (self.model.direction == Direction.LEFT)
+                {
+                    animation.gameObject.transform.localScale = Vector3.Scale(_targetTransform.localScale, Scale);
+                }
+                else
+                {
+                    animation.gameObject.transform.localScale = Vector3.Scale(new Vector3(-(this._targetTransform.localScale.x + 1f), this._targetTransform.localScale.y + 1f, this._targetTransform.localScale.z + 1f), Scale);
+                }
+                animation.gameObject.layer = LayerMask.NameToLayer("Effect");
+                InitializeCutsom();
+                AnimStart();
+                base.Initialize(self, target, destroyTime);
+            }catch(Exception ex)
             {
-                InitAnim();
+                Logger.Instance.Error(ex);
             }
-            animation.gameObject.transform.SetParent(this._targetTransform);
-            animation.gameObject.transform.position = this._targetTransform.position;
-            if (self.model.direction == Direction.LEFT)
-            {
-                animation.gameObject.transform.localScale = Vector3.Scale(_targetTransform.localScale, Scale);
-            }
-            else
-            {
-                animation.gameObject.transform.localScale = Vector3.Scale(new Vector3(-(this._targetTransform.localScale.x), this._targetTransform.localScale.y, this._targetTransform.localScale.z),Scale);
-            }
-            animation.gameObject.layer = LayerMask.NameToLayer("Effect");
-            InitializeCutsom();
-            AnimStart();
-            base.Initialize(self, target, destroyTime);
         }
         /// <summary>
         /// 自定义加载，在正常加载配置结束，动画开始播放前执行
@@ -233,13 +264,15 @@ namespace DateALive
         }
         private void AnimStart()
         {
+            Logger.Instance.Info("播放动画");
             animation.gameObject.SetActive(true);
             TrackEntry trackEntry = animation.state.SetAnimation(0, AnimName, false);
             trackEntry.Complete += AnimEnd;
         }
         private void AnimEnd(TrackEntry trackEntry)
         {
-            animation.gameObject.SetActive(false);
+            Logger.Instance.Info("动画结束");
+            GameObject.Destroy(animation.gameObject);
         }
         private SkeletonAnimation animation;
         /// <summary>
